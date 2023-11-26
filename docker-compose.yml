@@ -1,5 +1,5 @@
 services: 
   redis:
-    image: "custom-redis"
+    image: "whoishe/redis"
     ports:
       - 6379:6379
