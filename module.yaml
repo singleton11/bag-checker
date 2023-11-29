@@ -11,3 +11,5 @@ dependencies:
   - io.github.crackthecodeabhi:kreds:0.9.0
   - org.slf4j:slf4j-log4j12:2.0.9
   - io.github.microutils:kotlin-logging-jvm:3.0.5
+  - org.redisson:redisson:3.24.3
+  - org.jetbrains.kotlinx:kotlinx-coroutines-reactor:1.7.3

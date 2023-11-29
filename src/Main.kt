@@ -2,18 +2,18 @@ import com.github.kotlintelegrambot.bot
 import com.github.kotlintelegrambot.dispatch
 import com.github.kotlintelegrambot.dispatcher.command
 import com.github.kotlintelegrambot.entities.ChatId
-import io.github.crackthecodeabhi.kreds.connection.Endpoint
-import io.github.crackthecodeabhi.kreds.connection.newClient
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.reactive.asFlow
+import kotlinx.coroutines.reactor.awaitSingle
 import mu.KotlinLogging
-import java.util.*
-import kotlin.concurrent.schedule
+import org.redisson.Redisson
+import org.redisson.config.Config
 
 const val url = "https://ateliers-auguste.fr/en/products/mini-marly-gold-edition-cuir-box-taupe"
 
@@ -28,49 +28,51 @@ suspend fun isBagInStock(): Boolean {
 }
 
 suspend fun main(args: Array<String>) = coroutineScope {
-    logger.info { "This is zhopa" }
-    newClient(Endpoint.from("${args[1]}:6379")).use { redisClient ->
-        logger.info { "Initialization: getting client list to check system is working" }
-        val clients = redisClient.lrange("clients", 0, -1)
-        val clientsString = buildString {
-            append("[")
-            for (client in clients) {
-                append("$client,")
-            }
-            append("]")
+    val config = Config()
+    val singleServerConfig = config.useSingleServer()
+    singleServerConfig.address = "redis://${args[1]}:6379"
+    singleServerConfig.connectionMinimumIdleSize = 0
+    singleServerConfig.connectionPoolSize = 1
+    val reactiveClient = Redisson.create(config).reactive()
+    logger.info { "Initialization: getting client list to check system is working" }
+    val reactiveCLients = reactiveClient.getSet<String>("clients")
+    val clientString = buildString {
+        append("[")
+        reactiveCLients.iterator().asFlow().collect {
+            append("$it,")
         }
+        append("]")
 
-        logger.info { "Client list: $clientsString" }
-
-        val bot = bot {
-            token = args[0]
-            dispatch {
-                command("start") {
-                    val clientId = message.chat.id.toString()
-                    logger.info { "New client subscribed $clientId" }
-                    redisClient.lpush("clients", clientId)
-                }
-            }
-        }
-
-        launch {
-            logger.info { "Scheduling periodic task" }
-            Timer().schedule(0, 60 * 60 * 1000) {
-                logger.info { "Task occured" }
-                runBlocking {
-                    logger.info { "Checking whether bag in stock" }
-                    if (isBagInStock()) {
-                        logger.info { "Bug in stock" }
-                        val clients = redisClient.lrange("clients", 0, -1)
-                        logger.info { "Clients to send a message $clients" }
-                        for (client in clients) {
-                            logger.info { "Sending to $client" }
-                            bot.sendMessage(ChatId.fromId(client.toLong()), "Сумка доступна! Бегом покупать $url")
-                        }
-                    }
-                }
-            }
-        }
-        bot.startPolling()
     }
+    logger.info { "Client list: $clientString" }
+
+    val bot = bot {
+        token = args[0]
+        dispatch {
+            command("start") {
+                val clientId = message.chat.id.toString()
+                logger.info { "Subscribing new client: $clientId" }
+                reactiveCLients.add(clientId).awaitSingle()
+                logger.info { "New client subscribed: $clientId" }
+            }
+        }
+    }
+
+    logger.info { "Scheduling periodic task" }
+
+    launch {
+        while (true) {
+            delay(60 * 60 * 1000)
+            logger.info { "Task occured" }
+            logger.info { "Checking whether bag in stock" }
+            if (isBagInStock()) {
+                logger.info { "Bug in stock" }
+                reactiveCLients.iterator().asFlow().collect { client ->
+                    logger.info { "Sending to $client" }
+                    bot.sendMessage(ChatId.fromId(client.toLong()), "Сумка доступна! Бегом покупать $url")
+                }
+            }
+        }
+    }
+    bot.startPolling()
 }
