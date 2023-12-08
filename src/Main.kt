@@ -69,7 +69,7 @@ suspend fun main(args: Array<String>) = coroutineScope {
                 logger.info { "Bug in stock" }
                 reactiveCLients.iterator().asFlow().collect { client ->
                     logger.info { "Sending to $client" }
-                    bot.sendMessage(ChatId.fromId(client.toLong()), "Сумка доступна! Бегом покупать $url")
+                    bot.sendMessage(ChatId.fromId(client.toLong()), "Bag is available! You need to buy it urgently $url")
                 }
             }
         }
